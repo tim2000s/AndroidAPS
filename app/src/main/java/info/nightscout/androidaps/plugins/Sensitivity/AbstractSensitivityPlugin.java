@@ -1,22 +1,20 @@
 package info.nightscout.androidaps.plugins.Sensitivity;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import info.nightscout.androidaps.R;
 import info.nightscout.androidaps.interfaces.PluginBase;
 import info.nightscout.androidaps.interfaces.PluginDescription;
 import info.nightscout.androidaps.interfaces.SensitivityInterface;
 import info.nightscout.androidaps.plugins.IobCobCalculator.AutosensResult;
+import info.nightscout.utils.AAPSLogger;
 import info.nightscout.utils.Round;
 import info.nightscout.utils.SP;
 import info.nightscout.utils.SafeParse;
 
 public abstract class AbstractSensitivityPlugin extends PluginBase implements SensitivityInterface {
 
-    private static final Logger log = LoggerFactory.getLogger(SensitivityInterface.class);
+    private AAPSLogger log = new AAPSLogger(R.string.key_log_autosens);
 
-    public AbstractSensitivityPlugin(PluginDescription pluginDescription) {
+    AbstractSensitivityPlugin(PluginDescription pluginDescription) {
         super(pluginDescription);
     }
 
@@ -32,8 +30,8 @@ public abstract class AbstractSensitivityPlugin extends PluginBase implements Se
     }
 
     public AutosensResult fillResult(double ratio, double carbsAbsorbed, String pastSensitivity,
-                                      String ratioLimit, String sensResult, int deviationsArraySize,
-                                      double ratioMin, double ratioMax) {
+                                     String ratioLimit, String sensResult, int deviationsArraySize,
+                                     double ratioMin, double ratioMax) {
         double rawRatio = ratio;
         ratio = Math.max(ratio, ratioMin);
         ratio = Math.min(ratio, ratioMax);
@@ -51,7 +49,7 @@ public abstract class AbstractSensitivityPlugin extends PluginBase implements Se
 
         if (ratio != rawRatio) {
             ratioLimit += "Ratio limited from " + rawRatio + " to " + ratio;
-            log.debug(ratioLimit);
+            log.d(ratioLimit);
         }
 
         AutosensResult output = new AutosensResult();
@@ -62,7 +60,5 @@ public abstract class AbstractSensitivityPlugin extends PluginBase implements Se
         output.sensResult = sensResult;
         return output;
     }
-
-
 
 }

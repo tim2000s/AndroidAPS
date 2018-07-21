@@ -2,15 +2,11 @@ package info.nightscout.androidaps.plugins.Sensitivity;
 
 import android.support.v4.util.LongSparseArray;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Date;
 import java.util.List;
 
-import info.nightscout.androidaps.Config;
 import info.nightscout.androidaps.MainApp;
 import info.nightscout.androidaps.R;
 import info.nightscout.androidaps.data.Profile;
@@ -20,6 +16,7 @@ import info.nightscout.androidaps.interfaces.PluginType;
 import info.nightscout.androidaps.plugins.IobCobCalculator.AutosensData;
 import info.nightscout.androidaps.plugins.IobCobCalculator.AutosensResult;
 import info.nightscout.androidaps.plugins.IobCobCalculator.IobCobCalculatorPlugin;
+import info.nightscout.utils.AAPSLogger;
 import info.nightscout.utils.DateUtil;
 import info.nightscout.utils.SP;
 
@@ -28,7 +25,7 @@ import info.nightscout.utils.SP;
  */
 
 public class SensitivityAAPSPlugin extends AbstractSensitivityPlugin {
-    private static Logger log = LoggerFactory.getLogger(SensitivityAAPSPlugin.class);
+    private AAPSLogger log = new AAPSLogger(R.string.key_log_autosens);
 
     static SensitivityAAPSPlugin plugin = null;
 
@@ -62,18 +59,18 @@ public class SensitivityAAPSPlugin extends AbstractSensitivityPlugin {
         Profile profile = MainApp.getConfigBuilder().getProfile();
 
         if (profile == null) {
-            log.debug("No profile");
+            log.w("No profile");
             return new AutosensResult();
         }
 
         if (autosensDataTable == null || autosensDataTable.size() < 4) {
-            log.debug("No autosens data available. lastDataTime=" + IobCobCalculatorPlugin.getPlugin().lastDataTime());
+            log.w("No autosens data available. lastDataTime=" + IobCobCalculatorPlugin.getPlugin().lastDataTime());
             return new AutosensResult();
         }
 
         AutosensData current = IobCobCalculatorPlugin.getPlugin().getAutosensData(toTime); // this is running inside lock already
         if (current == null) {
-            log.debug("No autosens data available. toTime: " + DateUtil.dateAndTimeString(toTime) + " lastDataTime: " + IobCobCalculatorPlugin.getPlugin().lastDataTime());
+            log.w("No autosens data available. toTime: " + DateUtil.dateAndTimeString(toTime) + " lastDataTime: " + IobCobCalculatorPlugin.getPlugin().lastDataTime());
             return new AutosensResult();
         }
 
@@ -131,8 +128,7 @@ public class SensitivityAAPSPlugin extends AbstractSensitivityPlugin {
         String ratioLimit = "";
         String sensResult = "";
 
-        if (Config.logAutosensData)
-            log.debug("Records: " + index + "   " + pastSensitivity);
+        log.d("Records: " + index + "   " + pastSensitivity);
 
         Arrays.sort(deviations);
 
@@ -148,18 +144,15 @@ public class SensitivityAAPSPlugin extends AbstractSensitivityPlugin {
             sensResult = "Sensitivity normal";
         }
 
-        if (Config.logAutosensData)
-            log.debug(sensResult);
+        log.d(sensResult);
 
         AutosensResult output = fillResult(ratio, current.cob, pastSensitivity, ratioLimit,
                 sensResult, deviationsArray.size());
 
-        if (Config.logAutosensData) {
-            log.debug("Sensitivity to: {}, percentile: {} ratio: {} mealCOB: ",
-                    new Date(toTime).toLocaleString(),
-                    percentile, output.ratio, ratio, current.cob);
-            log.debug("Sensitivity to: deviations " + Arrays.toString(deviations));
-        }
+        log.d("Sensitivity to: %s, percentile: %.3f ratio: %.2f mealCOB: %.1f",
+                new Date(toTime).toLocaleString(),
+                percentile, output.ratio, ratio, current.cob);
+        log.d("Sensitivity to: deviations " + Arrays.toString(deviations));
 
         return output;
     }

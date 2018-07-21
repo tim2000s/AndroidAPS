@@ -7,15 +7,11 @@ import android.support.v4.util.LongSparseArray;
 
 import com.crashlytics.android.answers.CustomEvent;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 
 import info.nightscout.androidaps.BuildConfig;
-import info.nightscout.androidaps.Config;
 import info.nightscout.androidaps.Constants;
 import info.nightscout.androidaps.MainApp;
 import info.nightscout.androidaps.R;
@@ -31,6 +27,7 @@ import info.nightscout.androidaps.plugins.Sensitivity.SensitivityAAPSPlugin;
 import info.nightscout.androidaps.plugins.Sensitivity.SensitivityWeightedAveragePlugin;
 import info.nightscout.androidaps.plugins.Treatments.Treatment;
 import info.nightscout.androidaps.plugins.Treatments.TreatmentsPlugin;
+import info.nightscout.utils.AAPSLogger;
 import info.nightscout.utils.DateUtil;
 import info.nightscout.utils.FabricPrivacy;
 import info.nightscout.utils.SP;
@@ -42,7 +39,7 @@ import static info.nightscout.utils.DateUtil.now;
  */
 
 public class IobCobThread extends Thread {
-    private static Logger log = LoggerFactory.getLogger(IobCobThread.class);
+    private AAPSLogger log = new AAPSLogger(R.string.key_log_autosens);
     private final Event cause;
 
     private IobCobCalculatorPlugin iobCobCalculatorPlugin;
@@ -69,13 +66,13 @@ public class IobCobThread extends Thread {
     public final void run() {
         mWakeLock.acquire();
         try {
-            log.debug("AUTOSENSDATA thread started: " + from);
+            log.d("AUTOSENSDATA thread started: " + from);
             if (MainApp.getConfigBuilder() == null) {
-                log.debug("Aborting calculation thread (ConfigBuilder not ready): " + from);
+                log.w("Aborting calculation thread (ConfigBuilder not ready): " + from);
                 return; // app still initializing
             }
             if (!MainApp.getConfigBuilder().isProfileValid("IobCobThread")) {
-                log.debug("Aborting calculation thread (No profile): " + from);
+                log.w("Aborting calculation thread (No profile): " + from);
                 return; // app still initializing
             }
             //log.debug("Locking calculateSensitivityData");
@@ -91,12 +88,12 @@ public class IobCobThread extends Thread {
                 LongSparseArray<AutosensData> autosensDataTable = IobCobCalculatorPlugin.getPlugin().getAutosensDataTable();
 
                 if (bucketed_data == null || bucketed_data.size() < 3) {
-                    log.debug("Aborting calculation thread (No bucketed data available): " + from);
+                    log.w("Aborting calculation thread (No bucketed data available): " + from);
                     return;
                 }
 
                 long prevDataTime = IobCobCalculatorPlugin.roundUpTime(bucketed_data.get(bucketed_data.size() - 3).date);
-                log.debug("Prev data time: " + new Date(prevDataTime).toLocaleString());
+                log.d("Prev data time: " + new Date(prevDataTime).toLocaleString());
                 AutosensData previous = autosensDataTable.get(prevDataTime);
                 // start from oldest to be able sub cob
                 for (int i = bucketed_data.size() - 4; i >= 0; i--) {
@@ -105,7 +102,7 @@ public class IobCobThread extends Thread {
 
                     if (iobCobCalculatorPlugin.stopCalculationTrigger) {
                         iobCobCalculatorPlugin.stopCalculationTrigger = false;
-                        log.debug("Aborting calculation thread (trigger): " + from);
+                        log.d("Aborting calculation thread (trigger): " + from);
                         return;
                     }
                     // check if data already exists
@@ -122,12 +119,11 @@ public class IobCobThread extends Thread {
 
                     Profile profile = MainApp.getConfigBuilder().getProfile(bgTime);
                     if (profile == null) {
-                        log.debug("Aborting calculation thread (no profile): " + from);
+                        log.w("Aborting calculation thread (no profile): " + from);
                         return; // profile not set yet
                     }
 
-                    if (Config.logAutosensData)
-                        log.debug("Processing calculation thread: " + from + " (" + i + "/" + bucketed_data.size() + ")");
+                    log.d("Processing calculation thread: %s (%d/%d)", from, i, bucketed_data.size());
 
                     double sens = Profile.toMgdl(profile.getIsf(bgTime), profile.getUnits());
 
@@ -144,7 +140,7 @@ public class IobCobThread extends Thread {
                     double delta;
                     bg = bucketed_data.get(i).value;
                     if (bg < 39 || bucketed_data.get(i + 3).value < 39) {
-                        log.error("! value < 39");
+                        log.d("! value < 39");
                         continue;
                     }
                     autosensData.bg = bg;
@@ -168,8 +164,7 @@ public class IobCobThread extends Thread {
                         AutosensData hourAgoData = IobCobCalculatorPlugin.getPlugin().getAutosensData(hourago);
                         if (hourAgoData != null) {
                             int initialIndex = autosensDataTable.indexOfKey(hourAgoData.time);
-                            if (Config.logAutosensData)
-                                log.debug(">>>>> bucketed_data.size()=" + bucketed_data.size() + " i=" + i + "hourAgoData=" + hourAgoData.toString());
+                            log.d("bucketed_data.size()=%d i=%d hourAgoData=%s" ,  bucketed_data.size(), i, hourAgoData.toString());
                             int past = 1;
                             try {
                                 for (; past < 12; past++) {
@@ -188,7 +183,7 @@ public class IobCobThread extends Thread {
                                     //    log.debug("Deviations: " + new Date(bgTime) + new Date(ad.time) + " avgDeviation=" + avgDeviation + " deviationSlope=" + deviationSlope + " slopeFromMaxDeviation=" + slopeFromMaxDeviation + " slopeFromMinDeviation=" + slopeFromMinDeviation);
                                 }
                             } catch (Exception e) {
-                                log.error("Unhandled exception", e);
+                                log.e("Unhandled exception", e);
                                 FabricPrivacy.logException(e);
                                 FabricPrivacy.getInstance().logCustom(new CustomEvent("CatchedError")
                                         .putCustomAttribute("buildversion", BuildConfig.BUILDVERSION)
@@ -265,14 +260,11 @@ public class IobCobThread extends Thread {
                     previous = autosensData;
                     if (bgTime < now())
                         autosensDataTable.put(bgTime, autosensData);
-                    if (Config.logAutosensData)
-                        log.debug("Running detectSensitivity from: " + DateUtil.dateAndTimeString(oldestTimeWithData) + " to: " + DateUtil.dateAndTimeString(bgTime) + " lastDataTime:" + IobCobCalculatorPlugin.getPlugin().lastDataTime());
+                    log.d("Running detectSensitivity from: " + DateUtil.dateAndTimeString(oldestTimeWithData) + " to: " + DateUtil.dateAndTimeString(bgTime) + " lastDataTime:" + IobCobCalculatorPlugin.getPlugin().lastDataTime());
                     AutosensResult sensitivity = iobCobCalculatorPlugin.detectSensitivityWithLock(oldestTimeWithData, bgTime);
-                    if (Config.logAutosensData)
-                        log.debug("Sensitivity result: " + sensitivity.toString());
+                    log.d("Sensitivity result: " + sensitivity.toString());
                     autosensData.autosensResult = sensitivity;
-                    if (Config.logAutosensData)
-                        log.debug(autosensData.toString());
+                    log.d(autosensData.toString());
                 }
             }
             new Thread(() -> {
@@ -282,7 +274,7 @@ public class IobCobThread extends Thread {
         } finally {
             mWakeLock.release();
             MainApp.bus().post(new EventIobCalculationProgress(""));
-            log.debug("AUTOSENSDATA thread ended: " + from);
+            log.d("AUTOSENSDATA thread ended: " + from);
         }
     }
 

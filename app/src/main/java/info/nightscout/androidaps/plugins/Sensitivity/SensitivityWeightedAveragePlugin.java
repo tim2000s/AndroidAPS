@@ -2,13 +2,9 @@ package info.nightscout.androidaps.plugins.Sensitivity;
 
 import android.support.v4.util.LongSparseArray;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import java.util.Date;
 import java.util.List;
 
-import info.nightscout.androidaps.Config;
 import info.nightscout.androidaps.MainApp;
 import info.nightscout.androidaps.R;
 import info.nightscout.androidaps.data.Profile;
@@ -18,6 +14,7 @@ import info.nightscout.androidaps.interfaces.PluginType;
 import info.nightscout.androidaps.plugins.IobCobCalculator.AutosensData;
 import info.nightscout.androidaps.plugins.IobCobCalculator.AutosensResult;
 import info.nightscout.androidaps.plugins.IobCobCalculator.IobCobCalculatorPlugin;
+import info.nightscout.utils.AAPSLogger;
 import info.nightscout.utils.DateUtil;
 import info.nightscout.utils.SP;
 
@@ -26,7 +23,7 @@ import info.nightscout.utils.SP;
  */
 
 public class SensitivityWeightedAveragePlugin extends AbstractSensitivityPlugin {
-    private static Logger log = LoggerFactory.getLogger(SensitivityWeightedAveragePlugin.class);
+    private AAPSLogger log = new AAPSLogger(R.string.key_log_autosens);
 
     private static SensitivityWeightedAveragePlugin plugin = null;
 
@@ -58,22 +55,20 @@ public class SensitivityWeightedAveragePlugin extends AbstractSensitivityPlugin 
         int hoursForDetection = SP.getInt(R.string.key_openapsama_autosens_period, defaultHours);
 
         if (autosensDataTable == null || autosensDataTable.size() < 4) {
-            log.debug("No autosens data available. lastDataTime=" + IobCobCalculatorPlugin.getPlugin().lastDataTime());
+            log.w("No autosens data available. lastDataTime=" + IobCobCalculatorPlugin.getPlugin().lastDataTime());
             return new AutosensResult();
         }
 
         AutosensData current = IobCobCalculatorPlugin.getPlugin().getAutosensData(toTime); // this is running inside lock already
         if (current == null) {
-            if (Config.logAutosensData)
-                log.debug("No autosens data available. toTime: " + DateUtil.dateAndTimeString(toTime) + " lastDataTime: " + IobCobCalculatorPlugin.getPlugin().lastDataTime());
+            log.w("No autosens data available. toTime: " + DateUtil.dateAndTimeString(toTime) + " lastDataTime: " + IobCobCalculatorPlugin.getPlugin().lastDataTime());
             return new AutosensResult();
         }
 
 
         Profile profile = MainApp.getConfigBuilder().getProfile();
         if (profile == null) {
-            if (Config.logAutosensData)
-                log.debug("No profile available");
+            log.w("No profile available");
             return new AutosensResult();
         }
 
@@ -130,12 +125,10 @@ public class SensitivityWeightedAveragePlugin extends AbstractSensitivityPlugin 
         }
 
         if (data.size() == 0) {
-            if (Config.logAutosensData)
-                log.debug("Data size: " + data.size() + " fromTime: " + DateUtil.dateAndTimeString(fromTime) + " toTime: " + DateUtil.dateAndTimeString(toTime));
+            log.d("Data size: " + data.size() + " fromTime: " + DateUtil.dateAndTimeString(fromTime) + " toTime: " + DateUtil.dateAndTimeString(toTime));
             return new AutosensResult();
         } else {
-            if (Config.logAutosensData)
-                log.debug("Data size: " + data.size() + " fromTime: " + DateUtil.dateAndTimeString(fromTime) + " toTime: " + DateUtil.dateAndTimeString(toTime));
+            log.d("Data size: " + data.size() + " fromTime: " + DateUtil.dateAndTimeString(fromTime) + " toTime: " + DateUtil.dateAndTimeString(toTime));
         }
 
         double weightedsum = 0;
@@ -159,8 +152,7 @@ public class SensitivityWeightedAveragePlugin extends AbstractSensitivityPlugin 
         String ratioLimit = "";
         String sensResult;
 
-        if (Config.logAutosensData)
-            log.debug("Records: " + index + "   " + pastSensitivity);
+        log.d("Records: " + index + "   " + pastSensitivity);
 
         double average = weightedsum / weights;
         double basalOff = average * (60 / 5) / Profile.toMgdl(sens, profile.getUnits());
@@ -174,15 +166,13 @@ public class SensitivityWeightedAveragePlugin extends AbstractSensitivityPlugin 
             sensResult = "Sensitivity normal";
         }
 
-        if (Config.logAutosensData)
-            log.debug(sensResult);
+        log.d(sensResult);
 
         AutosensResult output = fillResult(ratio, current.cob, pastSensitivity, ratioLimit,
                 sensResult, data.size());
 
-        if (Config.logAutosensData)
-            log.debug("Sensitivity to: {}  weightedaverage: {} ratio: {} mealCOB: {}", new Date(toTime).toLocaleString(),
-                    average, output.ratio, current.cob);
+        log.d("Sensitivity to: %s  weightedaverage: %.3f ratio: %.2f mealCOB: %.1f", new Date(toTime).toLocaleString(),
+                average, output.ratio, current.cob);
 
         return output;
     }

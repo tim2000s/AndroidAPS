@@ -1,5 +1,8 @@
 package info.nightscout.androidaps;
 
+import info.nightscout.utils.AAPSLogger;
+import info.nightscout.utils.SP;
+
 /**
  * Created by mike on 07.06.2016.
  */
@@ -22,6 +25,9 @@ public class Config {
 
     public static final boolean SMSCOMMUNICATORENABLED = !BuildConfig.NSCLIENTOLNY && !BuildConfig.G5UPLOADER;
 
+    public static void setDefaultLevels() {
+        SP.putInt(R.string.key_log_autosens, AAPSLogger.ALL);
+    }
 
     public static final boolean detailedLog = true;
     public static final boolean logFunctionCalls = true;
@@ -33,7 +39,6 @@ public class Config {
     public static final boolean logNSUpload = true;
     public static final boolean logPumpActions = true;
     public static final boolean logCongigBuilderActions = true;
-    public static final boolean logAutosensData = true;
     public static final boolean logEvents = false;
     public static final boolean logProfile = false;
 

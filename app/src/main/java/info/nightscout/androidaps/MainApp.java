@@ -10,7 +10,6 @@ import android.support.v4.content.LocalBroadcastManager;
 
 import com.crashlytics.android.Crashlytics;
 import com.crashlytics.android.answers.Answers;
-import com.crashlytics.android.answers.CustomEvent;
 import com.j256.ormlite.android.apptools.OpenHelperManager;
 import com.squareup.otto.Bus;
 import com.squareup.otto.LoggingBus;
@@ -111,6 +110,7 @@ public class MainApp extends Application {
         sResources = getResources();
         sConstraintsChecker = new ConstraintChecker(this);
         sDatabaseHelper = OpenHelperManager.getHelper(sInstance, DatabaseHelper.class);
+        Config.setDefaultLevels();
 
         try {
             if (FabricPrivacy.fabricEnabled()) {
