@@ -35,7 +35,7 @@ import info.nightscout.androidaps.data.ProfileStore;
 import info.nightscout.androidaps.events.EventCareportalEventChange;
 import info.nightscout.androidaps.events.EventExtendedBolusChange;
 import info.nightscout.androidaps.events.EventNewBG;
-import info.nightscout.androidaps.events.EventProfileSwitchChange;
+import info.nightscout.androidaps.events.EventProfileNeedsUpdate;
 import info.nightscout.androidaps.events.EventRefreshOverview;
 import info.nightscout.androidaps.events.EventReloadProfileSwitchData;
 import info.nightscout.androidaps.events.EventReloadTempBasalData;
@@ -44,16 +44,19 @@ import info.nightscout.androidaps.events.EventTempBasalChange;
 import info.nightscout.androidaps.events.EventTempTargetChange;
 import info.nightscout.androidaps.interfaces.ProfileInterface;
 import info.nightscout.androidaps.logging.L;
-import info.nightscout.androidaps.plugins.ConfigBuilder.ConfigBuilderPlugin;
-import info.nightscout.androidaps.plugins.ConfigBuilder.ProfileFunctions;
-import info.nightscout.androidaps.plugins.IobCobCalculator.events.EventNewHistoryData;
-import info.nightscout.androidaps.plugins.NSClientInternal.NSUpload;
-import info.nightscout.androidaps.plugins.PumpDanaR.activities.DanaRNSHistorySync;
-import info.nightscout.androidaps.plugins.PumpDanaR.comm.RecordTypes;
-import info.nightscout.androidaps.plugins.PumpVirtual.VirtualPumpPlugin;
-import info.nightscout.utils.JsonHelper;
-import info.nightscout.utils.PercentageSplitter;
-import info.nightscout.utils.ToastUtils;
+import info.nightscout.androidaps.plugins.configBuilder.ConfigBuilderPlugin;
+import info.nightscout.androidaps.plugins.general.nsclient.NSUpload;
+import info.nightscout.androidaps.plugins.iob.iobCobCalculator.IobCobCalculatorPlugin;
+import info.nightscout.androidaps.plugins.iob.iobCobCalculator.events.EventNewHistoryData;
+import info.nightscout.androidaps.plugins.pump.danaR.activities.DanaRNSHistorySync;
+import info.nightscout.androidaps.plugins.pump.danaR.comm.RecordTypes;
+import info.nightscout.androidaps.plugins.pump.insight.database.InsightBolusID;
+import info.nightscout.androidaps.plugins.pump.insight.database.InsightHistoryOffset;
+import info.nightscout.androidaps.plugins.pump.insight.database.InsightPumpID;
+import info.nightscout.androidaps.plugins.pump.virtual.VirtualPumpPlugin;
+import info.nightscout.androidaps.utils.JsonHelper;
+import info.nightscout.androidaps.utils.PercentageSplitter;
+import info.nightscout.androidaps.utils.ToastUtils;
 
 /**
  * This Helper contains all resource to provide a central DB management functionality. Only methods handling
@@ -76,8 +79,11 @@ public class DatabaseHelper extends OrmLiteSqliteOpenHelper {
     public static final String DATABASE_CAREPORTALEVENTS = "CareportalEvents";
     public static final String DATABASE_PROFILESWITCHES = "ProfileSwitches";
     public static final String DATABASE_TDDS = "TDDs";
+    public static final String DATABASE_INSIGHT_HISTORY_OFFSETS = "InsightHistoryOffsets";
+    public static final String DATABASE_INSIGHT_BOLUS_IDS = "InsightBolusIDs";
+    public static final String DATABASE_INSIGHT_PUMP_IDS = "InsightPumpIDs";
 
-    private static final int DATABASE_VERSION = 9;
+    private static final int DATABASE_VERSION = 11;
 
     public static Long earliestDataChange = null;
 
@@ -122,6 +128,13 @@ public class DatabaseHelper extends OrmLiteSqliteOpenHelper {
             TableUtils.createTableIfNotExists(connectionSource, CareportalEvent.class);
             TableUtils.createTableIfNotExists(connectionSource, ProfileSwitch.class);
             TableUtils.createTableIfNotExists(connectionSource, TDD.class);
+            TableUtils.createTableIfNotExists(connectionSource, InsightHistoryOffset.class);
+            TableUtils.createTableIfNotExists(connectionSource, InsightBolusID.class);
+            TableUtils.createTableIfNotExists(connectionSource, InsightPumpID.class);
+            database.execSQL("INSERT INTO sqlite_sequence (name, seq) SELECT \"" + DATABASE_INSIGHT_BOLUS_IDS + "\", " + System.currentTimeMillis() + " " +
+                    "WHERE NOT EXISTS (SELECT 1 FROM sqlite_sequence WHERE name = \"" + DATABASE_INSIGHT_BOLUS_IDS + "\")");
+            database.execSQL("INSERT INTO sqlite_sequence (name, seq) SELECT \"" + DATABASE_INSIGHT_PUMP_IDS + "\", " + System.currentTimeMillis() + " " +
+                    "WHERE NOT EXISTS (SELECT 1 FROM sqlite_sequence WHERE name = \"" + DATABASE_INSIGHT_PUMP_IDS + "\")");
         } catch (SQLException e) {
             log.error("Can't create database", e);
             throw new RuntimeException(e);
@@ -134,11 +147,7 @@ public class DatabaseHelper extends OrmLiteSqliteOpenHelper {
             this.oldVersion = oldVersion;
             this.newVersion = newVersion;
 
-            if (oldVersion == 7 && newVersion == 8) {
-                log.debug("Upgrading database from v7 to v8");
-            } else if (oldVersion == 8 && newVersion == 9) {
-                log.debug("Upgrading database from v8 to v9");
-            } else {
+            if (oldVersion < 7) {
                 log.info(DatabaseHelper.class.getName(), "onUpgrade");
                 TableUtils.dropTable(connectionSource, TempTarget.class, true);
                 TableUtils.dropTable(connectionSource, BgReading.class, true);
@@ -149,11 +158,28 @@ public class DatabaseHelper extends OrmLiteSqliteOpenHelper {
                 TableUtils.dropTable(connectionSource, CareportalEvent.class, true);
                 TableUtils.dropTable(connectionSource, ProfileSwitch.class, true);
                 onCreate(database, connectionSource);
+            } else if (oldVersion < 10) {
+                TableUtils.createTableIfNotExists(connectionSource, InsightHistoryOffset.class);
+                TableUtils.createTableIfNotExists(connectionSource, InsightBolusID.class);
+                TableUtils.createTableIfNotExists(connectionSource, InsightPumpID.class);
+                database.execSQL("INSERT INTO sqlite_sequence (name, seq) SELECT \"" + DATABASE_INSIGHT_BOLUS_IDS + "\", " + System.currentTimeMillis() + " " +
+                        "WHERE NOT EXISTS (SELECT 1 FROM sqlite_sequence WHERE name = \"" + DATABASE_INSIGHT_BOLUS_IDS + "\")");
+                database.execSQL("INSERT INTO sqlite_sequence (name, seq) SELECT \"" + DATABASE_INSIGHT_PUMP_IDS + "\", " + System.currentTimeMillis() + " " +
+                        "WHERE NOT EXISTS (SELECT 1 FROM sqlite_sequence WHERE name = \"" + DATABASE_INSIGHT_PUMP_IDS + "\")");
+            } else if (oldVersion < 11) {
+                database.execSQL("UPDATE sqlite_sequence SET seq = " + System.currentTimeMillis() + " WHERE name = \"" + DATABASE_INSIGHT_BOLUS_IDS + "\"");
+                database.execSQL("UPDATE sqlite_sequence SET seq = " + System.currentTimeMillis() + " WHERE name = \"" + DATABASE_INSIGHT_PUMP_IDS + "\"");
             }
         } catch (SQLException e) {
             log.error("Can't drop databases", e);
             throw new RuntimeException(e);
         }
+    }
+
+    @Override
+    public void onDowngrade(SQLiteDatabase db, int oldVersion, int newVersion) {
+        log.info("Do nothing for downgrading...");
+        log.debug("oldVersion: {}, newVersion: {}", oldVersion, newVersion);
     }
 
     public int getOldVersion() {
@@ -321,6 +347,18 @@ public class DatabaseHelper extends OrmLiteSqliteOpenHelper {
         return getDao(ProfileSwitch.class);
     }
 
+    private Dao<InsightPumpID, Long> getDaoInsightPumpID() throws SQLException {
+        return getDao(InsightPumpID.class);
+    }
+
+    private Dao<InsightBolusID, Long> getDaoInsightBolusID() throws SQLException {
+        return getDao(InsightBolusID.class);
+    }
+
+    private Dao<InsightHistoryOffset, String> getDaoInsightHistoryOffset() throws SQLException {
+        return getDao(InsightHistoryOffset.class);
+    }
+
     public static long roundDateToSec(long date) {
         long rounded = date - date % 1000;
         if (rounded != date)
@@ -390,24 +428,15 @@ public class DatabaseHelper extends OrmLiteSqliteOpenHelper {
      */
     @Nullable
     public static BgReading lastBg() {
-        List<BgReading> bgList = null;
+        List<BgReading> bgList = IobCobCalculatorPlugin.getPlugin().getBgReadings();
 
-        try {
-            Dao<BgReading, Long> daoBgReadings = MainApp.getDbHelper().getDaoBgReadings();
-            QueryBuilder<BgReading, Long> queryBuilder = daoBgReadings.queryBuilder();
-            queryBuilder.orderBy("date", false);
-            queryBuilder.limit(1L);
-            queryBuilder.where().ge("value", 39).and().eq("isValid", true);
-            PreparedQuery<BgReading> preparedQuery = queryBuilder.prepare();
-            bgList = daoBgReadings.query(preparedQuery);
-
-        } catch (SQLException e) {
-            log.error("Unhandled exception", e);
-        }
-        if (bgList != null && bgList.size() > 0)
-            return bgList.get(0);
-        else
+        if (bgList == null)
             return null;
+
+        for (int i = 0; i < bgList.size(); i++)
+            if (bgList.get(i).value > 39)
+                return bgList.get(i);
+        return null;
     }
 
     /*
@@ -442,7 +471,7 @@ public class DatabaseHelper extends OrmLiteSqliteOpenHelper {
         } catch (SQLException e) {
             log.error("Unhandled exception", e);
         }
-        return new ArrayList<BgReading>();
+        return new ArrayList<>();
     }
 
     public List<BgReading> getBgreadingsDataFromTime(long start, long end, boolean ascending) {
@@ -459,7 +488,7 @@ public class DatabaseHelper extends OrmLiteSqliteOpenHelper {
         } catch (SQLException e) {
             log.error("Unhandled exception", e);
         }
-        return new ArrayList<BgReading>();
+        return new ArrayList<>();
     }
 
     public List<BgReading> getAllBgreadingsDataFromTime(long mills, boolean ascending) {
@@ -704,7 +733,7 @@ public class DatabaseHelper extends OrmLiteSqliteOpenHelper {
             String units = JsonHelper.safeGetString(trJson, "units", Constants.MGDL);
             TempTarget tempTarget = new TempTarget()
                     .date(trJson.getLong("mills"))
-                    .duration(trJson.getInt("duration"))
+                    .duration(JsonHelper.safeGetInt(trJson, "duration"))
                     .low(Profile.toMgdl(trJson.getDouble("targetBottom"), units))
                     .high(Profile.toMgdl(trJson.getDouble("targetTop"), units))
                     .reason(JsonHelper.safeGetString(trJson, "reason", ""))
@@ -1143,6 +1172,17 @@ public class DatabaseHelper extends OrmLiteSqliteOpenHelper {
         return false;
     }
 
+    public ExtendedBolus getExtendedBolusByPumpId(long pumpId) {
+        try {
+            return getDaoExtendedBolus().queryBuilder()
+                    .where().eq("pumpId", pumpId)
+                    .queryForFirst();
+        } catch (SQLException e) {
+            log.error("Unhandled exception", e);
+        }
+        return null;
+    }
+
     public void delete(ExtendedBolus extendedBolus) {
         try {
             getDaoExtendedBolus().delete(extendedBolus);
@@ -1541,9 +1581,9 @@ public class DatabaseHelper extends OrmLiteSqliteOpenHelper {
         class PostRunnable implements Runnable {
             public void run() {
                 if (L.isEnabled(L.DATABASE))
-                    log.debug("Firing EventProfileSwitchChange");
+                    log.debug("Firing EventProfileNeedsUpdate");
                 MainApp.bus().post(new EventReloadProfileSwitchData());
-                MainApp.bus().post(new EventProfileSwitchChange());
+                MainApp.bus().post(new EventProfileNeedsUpdate());
                 scheduledProfileSwitchEventPost = null;
             }
         }
@@ -1644,6 +1684,68 @@ public class DatabaseHelper extends OrmLiteSqliteOpenHelper {
             } else {
                 return null;
             }
+        } catch (SQLException e) {
+            log.error("Unhandled exception", e);
+        }
+        return null;
+    }
+
+    // ---------------- Insight history handling ---------------
+
+    public void createOrUpdate(InsightHistoryOffset offset) {
+        try {
+            getDaoInsightHistoryOffset().createOrUpdate(offset);
+        } catch (SQLException e) {
+            log.error("Unhandled exception", e);
+        }
+    }
+
+    public InsightHistoryOffset getInsightHistoryOffset(String pumpSerial) {
+        try {
+            return getDaoInsightHistoryOffset().queryForId(pumpSerial);
+        } catch (SQLException e) {
+            log.error("Unhandled exception", e);
+        }
+        return null;
+    }
+
+    public void createOrUpdate(InsightBolusID bolusID) {
+        try {
+            getDaoInsightBolusID().createOrUpdate(bolusID);
+        } catch (SQLException e) {
+            log.error("Unhandled exception", e);
+        }
+    }
+
+    public InsightBolusID getInsightBolusID(String pumpSerial, int bolusID, long timestamp) {
+        try {
+            return getDaoInsightBolusID().queryBuilder()
+                    .where().eq("pumpSerial", pumpSerial)
+                    .and().eq("bolusID", bolusID)
+                    .and().between("timestamp", timestamp - 259200000, timestamp + 259200000)
+                    .queryForFirst();
+        } catch (SQLException e) {
+            log.error("Unhandled exception", e);
+        }
+        return null;
+    }
+
+    public void createOrUpdate(InsightPumpID pumpID) {
+        try {
+            getDaoInsightPumpID().createOrUpdate(pumpID);
+        } catch (SQLException e) {
+            log.error("Unhandled exception", e);
+        }
+    }
+
+    public InsightPumpID getPumpStoppedEvent(String pumpSerial, long before) {
+        try {
+            return getDaoInsightPumpID().queryBuilder()
+                    .orderBy("timestamp", false)
+                    .where().eq("pumpSerial", pumpSerial)
+                    .and().in("eventType", "PumpStopped", "PumpPaused")
+                    .and().lt("timestamp", before)
+                    .queryForFirst();
         } catch (SQLException e) {
             log.error("Unhandled exception", e);
         }

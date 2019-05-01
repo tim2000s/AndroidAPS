@@ -48,17 +48,20 @@ import info.nightscout.androidaps.events.EventFeatureRunning;
 import info.nightscout.androidaps.events.EventPreferenceChange;
 import info.nightscout.androidaps.events.EventRefreshGui;
 import info.nightscout.androidaps.interfaces.PluginBase;
+import info.nightscout.androidaps.interfaces.PluginType;
 import info.nightscout.androidaps.logging.L;
-import info.nightscout.androidaps.plugins.ConfigBuilder.ProfileFunctions;
-import info.nightscout.androidaps.plugins.NSClientInternal.data.NSSettingsStatus;
+import info.nightscout.androidaps.plugins.aps.loop.LoopPlugin;
+import info.nightscout.androidaps.plugins.configBuilder.ProfileFunctions;
+import info.nightscout.androidaps.plugins.general.nsclient.data.NSSettingsStatus;
+import info.nightscout.androidaps.plugins.general.versionChecker.VersionCheckerUtilsKt;
 import info.nightscout.androidaps.setupwizard.SetupWizardActivity;
 import info.nightscout.androidaps.tabs.TabPageAdapter;
-import info.nightscout.utils.AndroidPermission;
-import info.nightscout.utils.LocaleHelper;
-import info.nightscout.utils.OKDialog;
-import info.nightscout.utils.PasswordProtection;
-import info.nightscout.utils.SP;
-import info.nightscout.utils.VersionChecker;
+import info.nightscout.androidaps.utils.AndroidPermission;
+import info.nightscout.androidaps.utils.FabricPrivacy;
+import info.nightscout.androidaps.utils.LocaleHelper;
+import info.nightscout.androidaps.utils.OKDialog;
+import info.nightscout.androidaps.utils.PasswordProtection;
+import info.nightscout.androidaps.utils.SP;
 
 public class MainActivity extends AppCompatActivity {
     private static Logger log = LoggerFactory.getLogger(L.CORE);
@@ -114,7 +117,12 @@ public class MainActivity extends AppCompatActivity {
             public void onPageScrollStateChanged(int state) {
             }
         });
-        VersionChecker.check();
+
+        //Check here if loop plugin is disabled. Else check via constraints
+        if (!LoopPlugin.getPlugin().isEnabled(PluginType.LOOP))
+            VersionCheckerUtilsKt.triggerCheckVersion();
+
+        FabricPrivacy.setUserStats();
     }
 
     private void checkPluginPreferences(ViewPager viewPager) {
@@ -170,7 +178,7 @@ public class MainActivity extends AppCompatActivity {
             boolean keepScreenOn = SP.getBoolean(R.string.key_keep_screen_on, false);
             final PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
             if (keepScreenOn) {
-                mWakeLock = pm.newWakeLock(PowerManager.SCREEN_BRIGHT_WAKE_LOCK, "AAPS");
+                mWakeLock = pm.newWakeLock(PowerManager.SCREEN_BRIGHT_WAKE_LOCK, "AndroidAPS:MainActivity_onEventPreferenceChange");
                 if (!mWakeLock.isHeld())
                     mWakeLock.acquire();
             } else {
@@ -326,6 +334,7 @@ public class MainActivity extends AppCompatActivity {
                     case AndroidPermission.CASE_LOCATION:
                     case AndroidPermission.CASE_SMS:
                     case AndroidPermission.CASE_BATTERY:
+                    case AndroidPermission.CASE_PHONESTATE:
                         break;
                 }
             }
@@ -377,10 +386,7 @@ public class MainActivity extends AppCompatActivity {
             case R.id.nav_about:
                 AlertDialog.Builder builder = new AlertDialog.Builder(this);
                 builder.setTitle(MainApp.gs(R.string.app_name) + " " + BuildConfig.VERSION);
-                if (Config.NSCLIENT)
-                    builder.setIcon(R.mipmap.yellowowl);
-                else
-                    builder.setIcon(R.mipmap.blueowl);
+                builder.setIcon(MainApp.getIcon());
                 String message = "Build: " + BuildConfig.BUILDVERSION + "\n";
                 message += "Flavor: " + BuildConfig.FLAVOR + BuildConfig.BUILD_TYPE + "\n";
                 message += MainApp.gs(R.string.configbuilder_nightscoutversion_label) + " " + NSSettingsStatus.getInstance().nightscoutVersionName;
